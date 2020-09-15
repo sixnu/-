@@ -1,0 +1,113 @@
+# 蒸汽预测
+import pandas as pd
+import numpy as np
+import math
+import os
+import seaborn as sns#图
+import matplotlib.pyplot as plt  #图
+
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone  #数据转换 特征工程
+from sklearn.preprocessing import StandardScaler, MinMaxScaler  #数据标准化
+from sklearn.preprocessing import RobustScaler  #对异常值数据缩放 
+from sklearn.preprocessing import PowerTransformer #映射到高斯分布
+from sklearn.pipeline import make_pipeline  #流水线 根据给定的估计量构造管道
+
+from matplotlib import pyplot  #图
+from datetime import datetime  #时间
+from sklearn.model_selection import KFold, cross_val_score, train_test_split, GridSearchCV   #模型验证
+from sklearn.linear_model import LinearRegression#线性回归
+from sklearn.metrics import mean_squared_error, r2_score  #模型评估
+from sklearn.decomposition import PCA  #主成分
+from sklearn.linear_model import ElasticNet, Lasso, Ridge,BayesianRidge, LassoLarsIC,LinearRegression,ElasticNetCV  #线性模型
+from sklearn.linear_model import RANSACRegressor
+from sklearn.svm import SVR
+from sklearn.kernel_ridge import KernelRidge  #内核岭回归
+from sklearn.ensemble import RandomForestRegressor #随机森林
+from sklearn.ensemble import  GradientBoostingRegressor #集成学习梯度提升决策树回归模型
+from sklearn.experimental import enable_hist_gradient_boosting
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import StackingRegressor #使用堆叠组合预测
+
+import xgboost  #
+from xgboost import XGBRegressor
+import lightgbm
+from lightgbm import LGBMRegressor  #决策树算法的梯度提升算法
+
+from mlxtend.regressor import StackingRegressor
+from tensorflow import keras
+
+from scipy import stats
+from scipy.stats import norm, skew #正态，偏分布分布
+
+#baseline
+#读取数据集
+data_train=pd.read_csv('.../zhengqi_train.txt',sep='\t')
+data_test=pd.read_csv('.../zhengqi_test.txt',sep='\t')
+
+#合并测试和验证数据集
+data_train['type']='train'
+data_test['type']='test'
+
+data_all=pd.concat([data_train,data_test],axis=0,ignore_index=True,sort=False)
+
+#查看数据类型 全部为浮点类型
+data_all.info()
+
+#数据均已经进行标准化处理
+data_all.describe().T
+
+#查看缺失值 目前来看无缺失值
+data_all.isnull().sum()
+
+X=data_all.loc[0:2887,:].drop(['target','type'],axis=1)
+Y=data_all.loc[0:2887,'target']
+y_t=np.log1p(Y)
+x_test=data_all.loc[2888:,:].drop(['target','type'],axis=1)
+x_test.shape
+X.shape
+
+x_train, x_valid, y_train, y_valid =train_test_split(X,Y,train_size=0.8)
+
+print(",训练数据特征:",x_train.shape,
+      ",测试数据特征:",x_valid.shape,
+      ",测试数据特征:",x_test.shape)
+print(",训练数据标签:",y_train.shape,
+     ',测试数据标签:',y_valid.shape)
+
+
+import lightgbm as lgb
+
+lgb_train = lgb.Dataset(x_train,label=y_train)
+lgb_valid = lgb.Dataset(x_valid,label=y_valid, reference=lgb_train)
+
+num_round = 150000
+params = {'boosting_type': 'gbdt',
+         'num_leaves': 31,
+         'max_depth': -1,
+         "lambda_l2": 2,  # 防止过拟合
+         'min_data_in_leaf': 20,  # 防止过拟合，好像都不用怎么调
+         'objective': 'regression_l1',
+         'learning_rate': 0.01,
+         "min_child_samples": 20,
+
+         "feature_fraction": 0.8,
+         "bagging_freq": 1,
+         "bagging_fraction": 0.8,
+         "bagging_seed": 11,
+         'metric': 'mae',
+         }
+results = {}
+
+gbm = lgb.train(params,
+                lgb_train, 
+                num_boost_round= num_round, 
+                valid_sets=[lgb_valid,lgb_train],
+                valid_names=('validate','train'),
+                early_stopping_rounds = 500,
+                evals_result= results,
+                )
+
+predictions_gbm=gbm.predict(x_test)
+print(pd.DataFrame(predictions_gbm).describe())
+sub = pd.DataFrame(predictions_gbm)
+sub.to_csv('zhengqi_test_predictions_gbm_0911_4.txt',index=False,header=False)
